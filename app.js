@@ -18,13 +18,13 @@ const ICONS = {
 };
 
 const CATEGORIES = [
-  { id: 'movement', emoji: '🏃', name: 'Movement' },
-  { id: 'nutrition', emoji: '🥗', name: 'Nutrition' },
-  { id: 'sleep', emoji: '😴', name: 'Sleep' },
-  { id: 'mind', emoji: '📚', name: 'Mind & growth' },
-  { id: 'wellness', emoji: '🧘', name: 'Mental wellness' },
-  { id: 'selfcare', emoji: '🧴', name: 'Self-care' },
-  { id: 'custom', emoji: '✨', name: 'Custom' }
+  { id: 'movement', emoji: '🏃', name: 'Movement', tone: 'sky' },
+  { id: 'nutrition', emoji: '🥗', name: 'Nutrition', tone: 'butter' },
+  { id: 'sleep', emoji: '😴', name: 'Sleep', tone: 'lavender' },
+  { id: 'mind', emoji: '📚', name: 'Mind & growth', tone: 'sage' },
+  { id: 'wellness', emoji: '🧘', name: 'Mental wellness', tone: 'rose' },
+  { id: 'selfcare', emoji: '🧴', name: 'Self-care', tone: 'terracotta' },
+  { id: 'custom', emoji: '✨', name: 'Custom', tone: 'muted' }
 ];
 
 const TIERS = [
@@ -394,10 +394,11 @@ function plantCardHTML() {
   const opacity = (0.55 + 0.45 * vitality).toFixed(2);
   const leveledUp = stageJustLeveledUp(stage);
   const bg = equippedItem('background');
+  const pot = equippedItem('pot');
   const avatarBg = SCENE_BG_STYLES[bg.id] || SCENE_BG_STYLES.bg_windowsill;
   return `<div class="plant-card">
     <div class="plant-card-top">
-      <div class="plant-avatar${leveledUp ? ' stage-up-flash' : ''}" id="plant-avatar" style="opacity:${opacity};background:${avatarBg};">${stage.emoji}${leveledUp ? sparklesHTML() : ''}</div>
+      <div class="plant-avatar" id="plant-avatar" style="opacity:${opacity};background:${avatarBg};">${renderPlantSVG(g.totalPoints, { size: 80, potId: pot.id, vitality, leveledUp })}${leveledUp ? sparklesHTML() : ''}</div>
       <div class="plant-info">
         <div class="plant-stage-name">${stage.name}${next ? '' : ' (fully grown)'}</div>
         <div class="plant-progress-track"><div class="plant-progress-fill" style="width:${next ? pct : 100}%;"></div></div>
@@ -449,7 +450,7 @@ function goalCardHTML(g, today) {
       else if (completionsOn(g, d) >= t) cls = 'on';
       else if (d < today) cls = 'miss';
     }
-    return `<span style="width:9px;height:9px;border-radius:3px;${cls === 'on' ? 'background:var(--primary);' : cls === 'miss' ? 'background:#E7BDAF;' : cls === 'rest-day' ? 'background:transparent;border:1.5px dashed var(--border);' : 'background:var(--border);'}"></span>`;
+    return `<span style="width:11px;height:11px;border-radius:50%;${cls === 'on' ? 'background:var(--primary);' : cls === 'miss' ? 'background:#E7BDAF;' : cls === 'rest-day' ? 'background:transparent;border:1.5px dashed var(--border);' : 'background:var(--border);'}"></span>`;
   }).join('')}</div>`;
   const banner = goalMissedYesterday(g) ? freezeBannerHTML(g) : '';
   const circleA11y = tapAction ? `role="button" tabindex="0" aria-label="${escapeHtml(g.name)} — mark complete" aria-pressed="${circleClass === 'done'}"` : '';
@@ -457,7 +458,8 @@ function goalCardHTML(g, today) {
     <div class="goal-card-inner">
       <div class="check-circle ${circleClass}" ${tapAction} ${circleA11y}>${circleContent}</div>
       <div class="goal-card-info" data-action="go-detail" data-id="${g.id}" role="button" tabindex="0" aria-label="${escapeHtml(g.name)} details">
-        <div class="goal-name">${cat.emoji} ${escapeHtml(g.name)}</div>
+        <div class="plant-stake" data-tone="${cat.tone}" style="margin-bottom:5px;">${cat.emoji} ${cat.name}</div>
+        <div class="goal-name">${escapeHtml(g.name)}</div>
         <div class="goal-meta"><span class="streak-pill">${ICONS.bolt}${stats.current}</span><span class="pts-pill">+${pointsPerCompletion(g)}</span><span>${freqLabel(g)}</span></div>
         ${miniHeat}
         ${banner}
@@ -524,14 +526,13 @@ function renderGardenHTML() {
   const deco = g.equipped.decoration ? SHOP_ITEMS.find(i => i.id === g.equipped.decoration) : null;
   const leveledUp = stageJustLeveledUp(stage);
   const sceneBg = SCENE_BG_STYLES[bg.id] || SCENE_BG_STYLES.bg_windowsill;
+  const vitality = todayVitality();
   return `
     <div class="header"><div><h1>Garden</h1><div class="subtitle">${stage.name} · ${g.totalPoints} lifetime points</div></div></div>
     <div class="screen">
-      <div class="garden-scene" style="background:${sceneBg};">
+      <div class="garden-scene" id="garden-plant-scene" style="background:${sceneBg};">
         ${deco ? `<div class="scene-decoration">${deco.emoji}</div>` : ''}
-        <div class="scene-plant${leveledUp ? ' stage-up-flash' : ''}">${stage.emoji}${leveledUp ? sparklesHTML() : ''}</div>
-        <div class="scene-ground-shadow"></div>
-        <div class="scene-pot">${pot.emoji}</div>
+        <div class="scene-plant-wrap">${renderPlantSVG(g.totalPoints, { size: 190, potId: pot.id, vitality, leveledUp })}${leveledUp ? sparklesHTML() : ''}</div>
       </div>
       <div class="goal-card" style="display:block;">
         <div class="plant-progress-track"><div class="plant-progress-fill" style="width:${next ? pct : 100}%;"></div></div>
@@ -859,7 +860,9 @@ function showUndoToast(msg, onUndo) {
 }
 function popPlant() {
   const el = document.getElementById('plant-avatar');
-  if (el) { el.classList.remove('leaf-pop'); void el.offsetWidth; el.classList.add('leaf-pop'); }
+  if (el) { el.classList.remove('leaf-pop'); void el.offsetWidth; el.classList.add('leaf-pop'); waterPlantFX(el); }
+  const gardenEl = document.getElementById('garden-plant-scene');
+  if (gardenEl) waterPlantFX(gardenEl);
 }
 
 /* ---------- actions ---------- */

@@ -1,6 +1,6 @@
 /* Minimal offline cache for the Sprout PWA. Cache-first for the app shell,
    with a network-first fallback for anything not pre-cached. */
-const CACHE_NAME = 'sprout-shell-v5';
+const CACHE_NAME = 'sprout-shell-v6';
 const SHELL_ASSETS = [
   './',
   './index.html',
@@ -11,6 +11,7 @@ const SHELL_ASSETS = [
   './nutrition.js',
   './movement.js',
   './onboarding.js',
+  './plant-illustration.js',
   './styles.css',
   './manifest.json',
   './icon-192.png',
