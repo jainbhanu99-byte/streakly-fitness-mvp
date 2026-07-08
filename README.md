@@ -1,21 +1,19 @@
-# Streakly — Fitness Consistency MVP
+# Sprout — Routine Tracker
 
-A mobile-first web app for building consistency on fitness goals through binary daily check-ins, streaks, and milestone badges. No build step, no backend — plain HTML/CSS/JS, data stored in the browser via `localStorage`.
+A mobile-first web app for building any routine — fitness, nutrition, sleep, reading, mindset, self-care — through simple check-ins, a fair points system, and a plant that visibly grows with your consistency. No build step, no backend — plain HTML/CSS/JS, data stored in the browser via `localStorage`.
 
-## Why this scope
+See `routine-tracker-product-plan.md` for the full research, framework, and decision log behind this direction.
 
-Consistency research points to a few reliable levers: a specific trigger (time/place) beats a vague goal, one-tap logging removes the friction that kills follow-through, visible streaks exploit loss-aversion ("don't break the chain"), and milestone badges give small, honest wins without over-engineering a rewards economy before the core loop is proven. This MVP intentionally leaves out social features, points economies, and adaptive reminders — those are retention multipliers to layer on once check-in habits stick.
+## What's in this version
 
-## What's in the MVP
-
-- Create a fitness goal from a template (Workout, Run, Yoga, Walk, Cycle, Swim, Gym, Stretch, or Custom)
-- Set frequency: every day, or specific weekdays
-- Optional trigger note (e.g. "after breakfast")
-- One-tap binary check-in per day
-- Current streak, longest streak, and total check-ins per goal
-- 12-week calendar heatmap per goal
-- Milestone badges at 3 / 7 / 14 / 30 / 60 / 100 days
-- Insights tab: active goals, best streak, total check-ins, weekly completion rate
+- Seven categories (Movement, Nutrition, Sleep, Mind & growth, Mental wellness, Self-care, Custom)
+- Flexible frequency: every day, N times a day, specific weekdays, or N times a week
+- A difficulty tier (Micro/Easy/Moderate/Hard/Extreme) that sets a transparent point value per completion
+- Adaptive mode (miss a day, spend a streak freeze) or Purist mode (true 75-Hard-style reset on any miss), chosen per routine
+- A growing plant companion: lifetime points drive growth stages (Seed → Sprout → Sapling → Young tree → Blooming → Flourishing), spendable points buy streak freezes and cosmetic pots/backgrounds/decorations in the Garden shop
+- Templates: 75 Hard, Atomic habits starter, Skincare AM/PM — fully editable before you start
+- Low-friction check-ins: tap or swipe-right to complete, a "complete all" bulk action, and a satisfying micro-animation on the plant with every check-in
+- Insights tab: streaks, weekly completion rate, category breakdown
 
 ## Running locally
 
@@ -29,12 +27,11 @@ Then open `http://localhost:8000` on a phone or in a mobile-width browser window
 
 ## Deploying
 
-Static site — deploys on Vercel with zero configuration. Push this folder to a GitHub repo and import it in Vercel, or run `vercel` from this directory with the Vercel CLI.
+Static site — deploys on Vercel with zero configuration. Already connected: this repo auto-deploys to Vercel on every push to `main`.
 
-## Roadmap (post-MVP)
+## Roadmap
 
-- Social layer: accountability pods, shared progress (not a public feed)
-- Gamification economy: XP/levels, streak freezes, cohort challenges
-- Smarter reminders based on actual check-in patterns
-- Weekly reflection / trend insights across goals
-- Numeric logging option alongside binary check-ins
+- WhatsApp reminders with yes/no reply-based check-ins (needs a backend — see the product plan)
+- Apple Health / Google Health Connect auto-verification (needs a native wrapper)
+- Buddy/pod accountability with photo-proof sharing
+- Weekly reflection / trend insights across categories
