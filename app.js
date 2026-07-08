@@ -611,6 +611,12 @@ function renderDetailHTML(goalId) {
     heatSection = `<div class="goal-card" style="display:block;"><div class="section-label" style="margin-bottom:6px;">This week</div><div style="font-size:26px;font-weight:700;color:var(--primary-dark);">${stats.thisWeekCount} / ${stats.weeklyTarget}</div></div>`;
   }
   const modeNote = g.mode === 'purist' ? 'Purist mode — any miss resets this streak.' : 'Adaptive mode — streak freezes protect a missed day.';
+  const deleteRow = view.confirmDelete === g.id
+    ? `<div style="display:flex;gap:10px;justify-content:center;margin-top:24px;">
+        <button class="secondary-btn" style="width:auto;padding:10px 18px;" data-action="cancel-delete">Cancel</button>
+        <button class="primary-btn" style="width:auto;padding:10px 18px;margin-top:0;background:var(--accent-dark);" data-action="confirm-delete-goal" data-id="${g.id}">Yes, delete</button>
+      </div>`
+    : `<button class="delete-link" data-action="delete-goal" data-id="${g.id}">Delete this routine</button>`;
   return `${headerWithBack(catOf(g.category).emoji + ' ' + escapeHtml(g.name))}
     <div class="screen">
       <div class="stat-row">
@@ -620,7 +626,7 @@ function renderDetailHTML(goalId) {
       </div>
       <div style="font-size:13px;color:var(--text-muted);margin:-10px 0 20px;">${freqLabel(g)} · ${pointsPerCompletion(g)} pts each${g.trigger ? ' · ' + escapeHtml(g.trigger) : ''}<br>${modeNote}</div>
       ${heatSection}
-      <button class="delete-link" data-action="delete-goal" data-id="${g.id}">Delete this routine</button>
+      ${deleteRow}
     </div>
   `;
 }
@@ -798,8 +804,9 @@ const handlers = {
     render();
     showToast(`${catOf(goal.category).emoji} ${goal.name} added`);
   },
-  'delete-goal': (el) => {
-    if (!confirm('Delete this routine? This cannot be undone.')) return;
+  'delete-goal': (el) => { view.confirmDelete = el.dataset.id; render(); },
+  'cancel-delete': () => { view.confirmDelete = null; render(); },
+  'confirm-delete-goal': (el) => {
     state.goals = state.goals.filter(g => g.id !== el.dataset.id);
     saveState();
     view = { name: 'home' };
