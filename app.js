@@ -108,11 +108,12 @@ const QUOTES = [
   "One missed day is a blip. Two in a row is a pattern."
 ];
 
-let state = { goals: [], garden: null };
+let state = { goals: [], garden: null, profile: null, mealPlans: [], meta: { onboardingSeen: false } };
 let view = { name: 'home', goalId: null, templateId: null };
 let navStack = [];
 let form = null;
 let pendingImport = null;
+let lastRenderedStage = null;
 
 /* ---------- date helpers ---------- */
 function pad2(n) { return n < 10 ? '0' + n : '' + n; }
@@ -165,6 +166,11 @@ function normalizeState(parsed) {
     if (!g.freezesApplied) g.freezesApplied = {};
     if (!g.freezeDismissed) g.freezeDismissed = {};
   });
+  if (parsed.profile !== null && typeof parsed.profile !== 'undefined' && typeof parsed.profile !== 'object') parsed.profile = null;
+  if (typeof parsed.profile === 'undefined') parsed.profile = null;
+  if (!Array.isArray(parsed.mealPlans)) parsed.mealPlans = [];
+  if (!parsed.meta || typeof parsed.meta !== 'object') parsed.meta = { onboardingSeen: false };
+  if (typeof parsed.meta.onboardingSeen !== 'boolean') parsed.meta.onboardingSeen = false;
   return parsed;
 }
 function loadState() {
@@ -175,7 +181,7 @@ function loadState() {
       if (normalized) return normalized;
     }
   } catch (e) { /* ignore corrupt data */ }
-  return { goals: [], garden: defaultGarden() };
+  return { goals: [], garden: defaultGarden(), profile: null, mealPlans: [], meta: { onboardingSeen: false } };
 }
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
@@ -272,6 +278,12 @@ function stageFor(points) {
   return s;
 }
 function nextStageFor(points) { return STAGES.find(st => st.min > points) || null; }
+function stageJustLeveledUp(stage) {
+  const changed = lastRenderedStage !== null && lastRenderedStage !== stage.name;
+  lastRenderedStage = stage.name;
+  return changed;
+}
+function sparklesHTML() { return `<span class="sparkle sparkle-1">✨</span><span class="sparkle sparkle-2">✨</span>`; }
 function todayVitality() {
   const today = todayISO();
   let eligible = 0, done = 0;
@@ -329,6 +341,8 @@ function bottomNavHTML(active) {
   return `<div class="bottom-nav">
     <button class="nav-btn ${active === 'home' ? 'active' : ''}" data-action="go-home">${ICONS.home}Home</button>
     <button class="nav-btn ${active === 'garden' ? 'active' : ''}" data-action="go-garden">${ICONS.leaf}Garden</button>
+    <button class="nav-fab-btn" data-action="go-add" aria-label="Add a routine">${ICONS.plus}</button>
+    <button class="nav-btn ${active === 'shop' ? 'active' : ''}" data-action="go-shop">${ICONS.shop}Shop</button>
     <button class="nav-btn ${active === 'insights' ? 'active' : ''}" data-action="go-insights">${ICONS.chart}Insights</button>
   </div>`;
 }
@@ -339,9 +353,10 @@ function plantCardHTML() {
   const pct = next ? Math.round(((g.totalPoints - stage.min) / (next.min - stage.min)) * 100) : 100;
   const vitality = todayVitality();
   const opacity = (0.55 + 0.45 * vitality).toFixed(2);
+  const leveledUp = stageJustLeveledUp(stage);
   return `<div class="plant-card">
     <div class="plant-card-top">
-      <div class="plant-avatar" id="plant-avatar" style="opacity:${opacity};">${stage.emoji}</div>
+      <div class="plant-avatar${leveledUp ? ' stage-up-flash' : ''}" id="plant-avatar" style="opacity:${opacity};">${stage.emoji}${leveledUp ? sparklesHTML() : ''}</div>
       <div class="plant-info">
         <div class="plant-stage-name">${stage.name}${next ? '' : ' (fully grown)'}</div>
         <div class="plant-progress-track"><div class="plant-progress-fill" style="width:${next ? pct : 100}%;"></div></div>
@@ -351,7 +366,7 @@ function plantCardHTML() {
     <div class="plant-stats-row">
       <div class="plant-stat"><div class="num">${g.balance}</div><div class="lbl">points</div></div>
       <div class="plant-stat"><div class="num">${g.freezeInventory}</div><div class="lbl">freezes</div></div>
-      <button class="plant-shop-btn" data-action="go-garden">${ICONS.shop}Shop</button>
+      <button class="plant-shop-btn" data-action="go-garden">${ICONS.leaf}Garden</button>
     </div>
   </div>`;
 }
@@ -437,47 +452,44 @@ function renderHomeHTML() {
   return `
     <div class="header"><div><h1>Routines</h1><div class="subtitle">${formatFriendly(today)}</div></div></div>
     <div class="screen">${body}</div>
-    <button class="fab" data-action="go-add" aria-label="Add a routine">${ICONS.plus}</button>
     ${bottomNavHTML('home')}
   `;
 }
 
+const SCENE_BG_STYLES = {
+  bg_windowsill: 'linear-gradient(180deg, #EAF3FB 0%, #DCEBDD 70%, #C9AE85 70%, #B99B70 100%)',
+  bg_greenhouse: 'linear-gradient(180deg, #DFF3E4 0%, #C7E6D0 70%, #8B6D4A 70%, #6F5539 100%)',
+  bg_garden: 'linear-gradient(180deg, #FDEBF0 0%, #F6D9E4 70%, #7A5A3A 70%, #5E4429 100%)'
+};
 function renderGardenHTML() {
   const g = state.garden;
   const stage = stageFor(g.totalPoints);
+  const next = nextStageFor(g.totalPoints);
+  const pct = next ? Math.round(((g.totalPoints - stage.min) / (next.min - stage.min)) * 100) : 100;
   const pot = equippedItem('pot');
   const bg = equippedItem('background');
   const deco = g.equipped.decoration ? SHOP_ITEMS.find(i => i.id === g.equipped.decoration) : null;
-  const shop = SHOP_ITEMS.map(item => {
-    const owned = itemOwned(item.id);
-    const equipped = item.type !== 'freeze' && g.equipped[item.type] === item.id;
-    let btnLabel, btnClass, disabled = '';
-    if (item.type === 'freeze') { btnLabel = 'Buy · ' + item.cost; btnClass = ''; if (g.balance < item.cost) disabled = 'disabled'; }
-    else if (equipped) { btnLabel = 'Equipped'; btnClass = 'equipped'; disabled = 'disabled'; }
-    else if (owned) { btnLabel = 'Equip'; btnClass = 'owned'; }
-    else { btnLabel = 'Buy · ' + item.cost; btnClass = ''; if (g.balance < item.cost) disabled = 'disabled'; }
-    return `<div class="shop-item">
-      <span class="emoji">${item.emoji}</span>
-      <div class="name">${item.name}</div>
-      <button class="${btnClass}" ${disabled} data-action="shop-buy" data-id="${item.id}">${btnLabel}</button>
-    </div>`;
-  }).join('');
+  const leveledUp = stageJustLeveledUp(stage);
+  const sceneBg = SCENE_BG_STYLES[bg.id] || SCENE_BG_STYLES.bg_windowsill;
   return `
     <div class="header"><div><h1>Garden</h1><div class="subtitle">${stage.name} · ${g.totalPoints} lifetime points</div></div></div>
     <div class="screen">
-      <div class="plant-card">
-        <div style="text-align:center;padding:12px 0;">
-          <div style="font-size:64px;">${stage.emoji}</div>
-          <div style="font-size:13px;color:var(--text-muted);margin-top:6px;">${pot.emoji} ${pot.name} · ${bg.emoji} ${bg.name}${deco ? ' · ' + deco.emoji + ' ' + deco.name : ''}</div>
-        </div>
+      <div class="garden-scene" style="background:${sceneBg};">
+        ${deco ? `<div class="scene-decoration">${deco.emoji}</div>` : ''}
+        <div class="scene-plant${leveledUp ? ' stage-up-flash' : ''}">${stage.emoji}${leveledUp ? sparklesHTML() : ''}</div>
+        <div class="scene-pot">${pot.emoji}</div>
       </div>
-      <div class="plant-stats-row" style="margin-bottom:20px;">
+      <div class="goal-card" style="display:block;">
+        <div class="plant-progress-track"><div class="plant-progress-fill" style="width:${next ? pct : 100}%;"></div></div>
+        <div class="plant-sub" style="margin-top:6px;">${next ? (next.min - g.totalPoints) + ' pts to ' + next.name : 'Maxed out — new stages coming soon'}</div>
+      </div>
+      <div class="plant-stats-row" style="margin:16px 0;">
         <div class="plant-stat"><div class="num">${g.balance}</div><div class="lbl">points</div></div>
         <div class="plant-stat"><div class="num">${g.freezeInventory}</div><div class="lbl">freezes</div></div>
         <div class="plant-stat"><div class="num">${state.goals.length}</div><div class="lbl">routines</div></div>
       </div>
-      <div class="section-label">Shop</div>
-      <div class="shop-grid">${shop}</div>
+      <div style="font-size:13px;color:var(--text-muted);text-align:center;">${pot.name} · ${bg.name}${deco ? ' · ' + deco.name : ''}</div>
+      <button class="secondary-btn" style="margin-top:16px;" data-action="go-shop">${ICONS.shop} Visit the shop</button>
     </div>
     ${bottomNavHTML('garden')}
   `;
@@ -502,6 +514,7 @@ function dataBackupCardHTML() {
       <button class="secondary-btn" style="width:auto;padding:10px 18px;" data-action="trigger-import">Import data</button>
     </div>
     <input type="file" id="import-file-input" accept="application/json" style="display:none;" aria-label="Choose a backup file to import">
+    <button class="link-btn" style="margin-top:14px;" data-action="replay-onboarding">Replay intro</button>
   </div>`;
 }
 function renderInsightsHTML() {
@@ -692,11 +705,23 @@ function renderDetailHTML(goalId) {
 
 function render() {
   const app = document.getElementById('app');
+  const active = document.activeElement;
+  const focusId = active && active.id ? active.id : null;
+  let selStart = null, selEnd = null;
+  if (focusId) {
+    try { selStart = active.selectionStart; selEnd = active.selectionEnd; } catch (e) { /* not a text-like input */ }
+  }
   let html;
   switch (view.name) {
     case 'add': html = renderAddHTML(); break;
     case 'garden': html = renderGardenHTML(); break;
+    case 'shop': html = renderShopHTML(); break;
     case 'insights': html = renderInsightsHTML(); break;
+    case 'onboarding': html = renderOnboardingHTML(); break;
+    case 'nutritionHub': html = renderNutritionHubHTML(); break;
+    case 'nutritionProfile': html = renderNutritionProfileHTML(); break;
+    case 'mealPlanBuilder': html = renderMealPlanBuilderHTML(); break;
+    case 'movementHub': html = renderMovementHubHTML(); break;
     case 'templates': html = renderTemplatesHTML(); break;
     case 'templatePreview': html = renderTemplatePreviewHTML(view.templateId); break;
     case 'detail':
@@ -706,6 +731,15 @@ function render() {
     default: html = renderHomeHTML();
   }
   app.innerHTML = html;
+  if (focusId) {
+    const el = document.getElementById(focusId);
+    if (el) {
+      el.focus();
+      if (selStart !== null && el.setSelectionRange) {
+        try { el.setSelectionRange(selStart, selEnd); } catch (e) { /* not applicable to this input type */ }
+      }
+    }
+  }
 }
 
 function showToast(msg) {
@@ -749,6 +783,17 @@ function popPlant() {
 }
 
 /* ---------- actions ---------- */
+function buildGoal(overrides) {
+  return Object.assign({
+    id: 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    trigger: '',
+    mode: 'adaptive',
+    createdAt: todayISO(),
+    checkins: {},
+    freezesApplied: {},
+    freezeDismissed: {}
+  }, overrides);
+}
 function applyCheckinDelta(goal, dateStr, nextCount) {
   const cur = completionsOn(goal, dateStr);
   const delta = nextCount - cur;
@@ -775,6 +820,7 @@ function doToggleCheckin(goal) {
 const handlers = {
   'go-home': () => { navStack = []; view = { name: 'home' }; render(); },
   'go-garden': () => { navStack = []; view = { name: 'garden' }; render(); },
+  'go-shop': () => { navStack = []; view = { name: 'shop' }; render(); },
   'go-insights': () => { navStack = []; view = { name: 'insights' }; render(); },
   'go-back': () => { view = navStack.pop() || { name: 'home' }; render(); },
   'go-templates': () => { navStack.push(view); view = { name: 'templates' }; render(); },
@@ -821,7 +867,20 @@ const handlers = {
     saveState();
     render();
   },
-  'select-category': (el) => { form.category = el.dataset.id; render(); },
+  'select-category': (el) => {
+    const id = el.dataset.id;
+    if (id === 'movement') { navStack.push(view); view = { name: 'movementHub' }; render(); return; }
+    if (id === 'nutrition') { navStack.push(view); view = { name: 'nutritionHub' }; render(); return; }
+    form.category = id;
+    render();
+  },
+  'go-add-manual': (el) => {
+    navStack.push(view);
+    resetForm();
+    if (el.dataset.category) form.category = el.dataset.category;
+    view = { name: 'add' };
+    render();
+  },
   'select-freqtype': (el) => { form.freqType = el.dataset.id; render(); },
   'step-tpd': (el) => { form.timesPerDay = Math.max(2, Math.min(6, form.timesPerDay + parseInt(el.dataset.delta, 10))); render(); },
   'step-tpw': (el) => { form.timesPerWeek = Math.max(1, Math.min(6, form.timesPerWeek + parseInt(el.dataset.delta, 10))); render(); },
@@ -956,6 +1015,7 @@ const handlers = {
     showToast(owned ? item.name + ' equipped' : item.name + ' purchased and equipped');
   }
 };
+Object.assign(handlers, nutritionHandlers, movementHandlers, onboardingHandlers);
 
 /* ---------- swipe-to-complete ---------- */
 let swipeState = null;
@@ -1005,9 +1065,14 @@ function onAppKeydown(e) {
   if (handlers[action]) handlers[action](t, e);
 }
 function onAppInput(e) {
-  if (!form) return;
-  if (e.target.id === 'goal-name-input') form.name = e.target.value;
-  else if (e.target.id === 'goal-trigger-input') form.trigger = e.target.value;
+  const id = e.target.id;
+  if (form && id === 'goal-name-input') form.name = e.target.value;
+  else if (form && id === 'goal-trigger-input') form.trigger = e.target.value;
+  else if (profileForm && id === 'profile-age-input') profileForm.age = parseInt(e.target.value, 10) || 0;
+  else if (profileForm && id === 'profile-weight-input') profileForm.weightKg = parseFloat(e.target.value) || 0;
+  else if (profileForm && id === 'profile-height-input') profileForm.heightCm = parseFloat(e.target.value) || 0;
+  else if (id === 'meal-search-input') { mealSearchQuery = e.target.value; render(); }
+  else if (id === 'meal-plan-name-input') mealPlanName = e.target.value;
 }
 function onAppChange(e) {
   if (e.target.id !== 'import-file-input' || !e.target.files || !e.target.files[0]) return;
@@ -1027,6 +1092,7 @@ function onAppChange(e) {
 document.addEventListener('DOMContentLoaded', function () {
   state = loadState();
   resetForm();
+  if (!state.meta.onboardingSeen) view = { name: 'onboarding', slide: 0 };
   const app = document.getElementById('app');
   app.addEventListener('click', onAppClick);
   app.addEventListener('keydown', onAppKeydown);
