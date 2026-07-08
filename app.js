@@ -110,6 +110,7 @@ const QUOTES = [
 
 let state = { goals: [], garden: null };
 let view = { name: 'home', goalId: null, templateId: null };
+let navStack = [];
 let form = null;
 
 /* ---------- date helpers ---------- */
@@ -160,6 +161,12 @@ function loadState() {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (!parsed.garden) parsed.garden = defaultGarden();
+      if (!Array.isArray(parsed.goals)) parsed.goals = [];
+      parsed.goals.forEach(g => {
+        if (!g.checkins) g.checkins = {};
+        if (!g.freezesApplied) g.freezesApplied = {};
+        if (!g.freezeDismissed) g.freezeDismissed = {};
+      });
       return parsed;
     }
   } catch (e) { /* ignore corrupt data */ }
@@ -208,6 +215,7 @@ function freqLabel(goal) {
 /* ---------- stats ---------- */
 function computeDailyStats(goal) {
   const end = todayISO();
+  if (end < goal.createdAt) return { current: 0, longest: 0, total: 0 };
   let d = goal.createdAt;
   let run = 0, longest = 0, total = 0;
   while (true) {
@@ -228,6 +236,7 @@ function computeWeeklyStats(goal) {
   const today = todayISO();
   const currentWeek = mondayOf(today);
   let wk = mondayOf(goal.createdAt);
+  if (wk > currentWeek) return { current: 0, longest: 0, total: 0, thisWeekCount: 0, weeklyTarget: goal.frequency.timesPerWeek };
   let run = 0, longest = 0, total = 0, thisWeekCount = 0;
   while (true) {
     let count = 0;
@@ -270,7 +279,7 @@ function todayVitality() {
   return done / eligible;
 }
 function addPoints(delta) {
-  state.garden.totalPoints = Math.max(0, state.garden.totalPoints + delta);
+  if (delta > 0) state.garden.totalPoints += delta;
   state.garden.balance = Math.max(0, state.garden.balance + delta);
 }
 function itemOwned(id) { return state.garden.unlocked.includes(id); }
@@ -296,7 +305,7 @@ function goalMissedYesterday(goal) {
 /* ---------- rendering helpers ---------- */
 function headerWithBack(title) {
   return `<div class="header">
-    <button class="header-icon-btn" data-action="go-home">${ICONS.back}</button>
+    <button class="header-icon-btn" data-action="go-back">${ICONS.back}</button>
     <h1 style="font-size:17px;">${title}</h1>
     <div style="width:38px;"></div>
   </div>`;
@@ -467,11 +476,15 @@ function renderInsightsHTML() {
   }
   const allStats = state.goals.map(g => ({ g, stats: computeStats(g) }));
   const totalCheckins = allStats.reduce((sum, x) => sum + x.stats.total, 0);
-  const best = allStats.reduce((a, b) => (b.stats.current > a.stats.current ? b : a), allStats[0]);
+  const best = allStats.reduce((a, b) => (b.stats.longest > a.stats.longest ? b : a), allStats[0]);
   const week = last7Days(today);
   let scheduledCount = 0, doneCount = 0;
-  state.goals.forEach(g => {
-    if (g.frequency.type === 'times_per_week') return;
+  allStats.forEach(({ g, stats }) => {
+    if (g.frequency.type === 'times_per_week') {
+      scheduledCount += stats.weeklyTarget;
+      doneCount += Math.min(stats.thisWeekCount, stats.weeklyTarget);
+      return;
+    }
     week.forEach(d => {
       const t = targetForDay(g, d);
       if (t > 0) { scheduledCount++; if (completionsOn(g, d) >= t) doneCount++; }
@@ -488,7 +501,7 @@ function renderInsightsHTML() {
     <div class="screen">
       <div class="stat-row">
         <div class="stat-box"><div class="num">${state.goals.length}</div><div class="lbl">Routines</div></div>
-        <div class="stat-box"><div class="num">${best.stats.current}</div><div class="lbl">Best streak</div></div>
+        <div class="stat-box"><div class="num">${best.stats.longest}</div><div class="lbl">Best streak</div></div>
         <div class="stat-box"><div class="num">${totalCheckins}</div><div class="lbl">Check-ins</div></div>
       </div>
       <div class="goal-card" style="display:block;">
@@ -553,7 +566,7 @@ function renderAddHTML() {
 }
 function freqObjFromForm() {
   if (form.freqType === 'times_per_day') return { type: 'times_per_day', timesPerDay: form.timesPerDay };
-  if (form.freqType === 'weekdays') return { type: 'weekdays', days: form.days.length ? form.days : [1, 3, 5] };
+  if (form.freqType === 'weekdays') return { type: 'weekdays', days: form.days };
   if (form.freqType === 'times_per_week') return { type: 'times_per_week', timesPerWeek: form.timesPerWeek };
   return { type: 'daily' };
 }
@@ -675,7 +688,7 @@ function applyCheckinDelta(goal, dateStr, nextCount) {
 function doToggleCheckin(goal) {
   const today = todayISO();
   const isWeekly = goal.frequency.type === 'times_per_week';
-  const target = isWeekly ? goal.frequency.timesPerWeek : targetForDay(goal, today);
+  const target = isWeekly ? 1 : targetForDay(goal, today);
   const cur = completionsOn(goal, today);
   let next = cur + 1;
   if (cur >= target) next = 0;
@@ -689,13 +702,14 @@ function doToggleCheckin(goal) {
 }
 
 const handlers = {
-  'go-home': () => { view = { name: 'home' }; render(); },
-  'go-garden': () => { view = { name: 'garden' }; render(); },
-  'go-insights': () => { view = { name: 'insights' }; render(); },
-  'go-templates': () => { view = { name: 'templates' }; render(); },
-  'go-add': () => { resetForm(); view = { name: 'add' }; render(); },
-  'go-detail': (el) => { view = { name: 'detail', goalId: el.dataset.id }; render(); },
-  'preview-template': (el) => { form = form || {}; form.templateSelected = null; form.templateMode = null; view = { name: 'templatePreview', templateId: el.dataset.id }; render(); },
+  'go-home': () => { navStack = []; view = { name: 'home' }; render(); },
+  'go-garden': () => { navStack = []; view = { name: 'garden' }; render(); },
+  'go-insights': () => { navStack = []; view = { name: 'insights' }; render(); },
+  'go-back': () => { view = navStack.pop() || { name: 'home' }; render(); },
+  'go-templates': () => { navStack.push(view); view = { name: 'templates' }; render(); },
+  'go-add': () => { navStack.push(view); resetForm(); view = { name: 'add' }; render(); },
+  'go-detail': (el) => { navStack.push(view); view = { name: 'detail', goalId: el.dataset.id }; render(); },
+  'preview-template': (el) => { navStack.push(view); form = form || {}; form.templateSelected = null; form.templateMode = null; view = { name: 'templatePreview', templateId: el.dataset.id }; render(); },
   'toggle-checkin': (el) => {
     const g = state.goals.find(x => x.id === el.dataset.id);
     if (!g) return;
@@ -708,7 +722,7 @@ const handlers = {
     let totalDelta = 0;
     state.goals.forEach(g => {
       const isWeekly = g.frequency.type === 'times_per_week';
-      const target = isWeekly ? g.frequency.timesPerWeek : targetForDay(g, today);
+      const target = isWeekly ? 1 : targetForDay(g, today);
       if (target === 0) return;
       const cur = completionsOn(g, today);
       if (cur < target) totalDelta += applyCheckinDelta(g, today, target) * pointsPerCompletion(g);
@@ -776,6 +790,7 @@ const handlers = {
       added++;
     });
     saveState();
+    navStack = [];
     view = { name: 'home' };
     render();
     showToast(`${added} routine${added === 1 ? '' : 's'} added from ${t.name}`);
@@ -800,6 +815,7 @@ const handlers = {
     };
     state.goals.push(goal);
     saveState();
+    navStack = [];
     view = { name: 'home' };
     render();
     showToast(`${catOf(goal.category).emoji} ${goal.name} added`);
@@ -809,6 +825,7 @@ const handlers = {
   'confirm-delete-goal': (el) => {
     state.goals = state.goals.filter(g => g.id !== el.dataset.id);
     saveState();
+    navStack = [];
     view = { name: 'home' };
     render();
   },
@@ -861,7 +878,7 @@ function onTouchEnd(e) {
     if (g) {
       const today = todayISO();
       const isWeekly = g.frequency.type === 'times_per_week';
-      const target = isWeekly ? g.frequency.timesPerWeek : targetForDay(g, today);
+      const target = isWeekly ? 1 : targetForDay(g, today);
       if (completionsOn(g, today) < target) { doToggleCheckin(g); render(); popPlant(); }
     }
   }
@@ -889,5 +906,8 @@ document.addEventListener('DOMContentLoaded', function () {
   app.addEventListener('touchstart', onTouchStart, { passive: true });
   app.addEventListener('touchmove', onTouchMove, { passive: true });
   app.addEventListener('touchend', onTouchEnd);
+  window.addEventListener('storage', (e) => {
+    if (e.key === STORAGE_KEY) { state = loadState(); render(); }
+  });
   render();
 });
