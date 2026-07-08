@@ -234,7 +234,7 @@ svg.icon { display: block; flex-shrink: 0; }
 /* Garden scene */
 .garden-scene {
   position: relative;
-  height: 220px;
+  height: 200px;
   border-radius: var(--radius);
   display: flex;
   flex-direction: column;
@@ -242,16 +242,35 @@ svg.icon { display: block; flex-shrink: 0; }
   justify-content: flex-end;
   overflow: hidden;
   margin: 10px 0 16px;
-  padding-bottom: 16px;
+  padding-bottom: 30px;
 }
 .scene-plant {
   position: relative;
-  font-size: 84px;
+  font-size: 72px;
   line-height: 1;
-  filter: drop-shadow(0 6px 8px rgba(0,0,0,0.15));
+  margin-bottom: -20px;
+  z-index: 2;
+  filter: drop-shadow(0 6px 6px rgba(0,0,0,0.18));
   animation: plant-sway 4s ease-in-out infinite;
 }
-.scene-pot { font-size: 44px; margin-top: -8px; }
+.scene-pot {
+  font-size: 56px;
+  line-height: 1;
+  z-index: 1;
+  filter: drop-shadow(0 4px 5px rgba(0,0,0,0.2));
+}
+.scene-ground-shadow {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 64px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.16);
+  filter: blur(3px);
+  z-index: 0;
+}
 .scene-decoration {
   position: absolute;
   top: 14px;

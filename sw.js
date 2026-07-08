@@ -1,6 +1,6 @@
 /* Minimal offline cache for the Sprout PWA. Cache-first for the app shell,
    with a network-first fallback for anything not pre-cached. */
-const CACHE_NAME = 'sprout-shell-v2';
+const CACHE_NAME = 'sprout-shell-v4';
 const SHELL_ASSETS = [
   './',
   './index.html',
@@ -19,7 +19,11 @@ const SHELL_ASSETS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.all(SHELL_ASSETS.map((url) =>
+        fetch(url, { cache: 'reload' }).then((res) => cache.put(url, res))
+      ))
+    ).then(() => self.skipWaiting())
   );
 });
 

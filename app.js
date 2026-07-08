@@ -42,21 +42,21 @@ const STAGES = [
   { name: 'Seed', min: 0, emoji: '🌰' },
   { name: 'Sprout', min: 20, emoji: '🌱' },
   { name: 'Sapling', min: 75, emoji: '🌿' },
-  { name: 'Young tree', min: 200, emoji: '🪴' },
+  { name: 'Young tree', min: 200, emoji: '🌲' },
   { name: 'Blooming', min: 500, emoji: '🌸' },
   { name: 'Flourishing', min: 1000, emoji: '🌳' }
 ];
 
 const SHOP_ITEMS = [
   { id: 'freeze', name: 'Streak freeze', cost: 25, type: 'freeze', emoji: '🧊' },
-  { id: 'pot_ceramic', name: 'Ceramic pot', cost: 40, type: 'pot', emoji: '🏺' },
+  { id: 'pot_ceramic', name: 'Ceramic pot', cost: 40, type: 'pot', emoji: '🫙' },
   { id: 'pot_copper', name: 'Copper pot', cost: 70, type: 'pot', emoji: '🍯' },
   { id: 'bg_greenhouse', name: 'Greenhouse', cost: 60, type: 'background', emoji: '🏡' },
   { id: 'bg_garden', name: 'Garden bed', cost: 90, type: 'background', emoji: '🌷' },
   { id: 'deco_lights', name: 'Fairy lights', cost: 50, type: 'decoration', emoji: '✨' },
   { id: 'deco_stones', name: 'Pebble stones', cost: 20, type: 'decoration', emoji: '🪨' }
 ];
-const DEFAULT_POT = { id: 'pot_terracotta', name: 'Terracotta pot', emoji: '🪴' };
+const DEFAULT_POT = { id: 'pot_terracotta', name: 'Terracotta pot', emoji: '🏺' };
 const DEFAULT_BG = { id: 'bg_windowsill', name: 'Windowsill', emoji: '🪟' };
 
 const TEMPLATES = [
@@ -457,9 +457,9 @@ function renderHomeHTML() {
 }
 
 const SCENE_BG_STYLES = {
-  bg_windowsill: 'linear-gradient(180deg, #EAF3FB 0%, #DCEBDD 70%, #C9AE85 70%, #B99B70 100%)',
-  bg_greenhouse: 'linear-gradient(180deg, #DFF3E4 0%, #C7E6D0 70%, #8B6D4A 70%, #6F5539 100%)',
-  bg_garden: 'linear-gradient(180deg, #FDEBF0 0%, #F6D9E4 70%, #7A5A3A 70%, #5E4429 100%)'
+  bg_windowsill: 'linear-gradient(180deg, #EAF3FB 0%, #E3EEE3 45%, #D7C9A3 62%, #C9AE85 78%, #B99B70 100%)',
+  bg_greenhouse: 'linear-gradient(180deg, #DFF3E4 0%, #D2ECDA 45%, #A98F66 62%, #8B6D4A 78%, #6F5539 100%)',
+  bg_garden: 'linear-gradient(180deg, #FDEBF0 0%, #F9E1E9 45%, #977B54 62%, #7A5A3A 78%, #5E4429 100%)'
 };
 function renderGardenHTML() {
   const g = state.garden;
@@ -477,6 +477,7 @@ function renderGardenHTML() {
       <div class="garden-scene" style="background:${sceneBg};">
         ${deco ? `<div class="scene-decoration">${deco.emoji}</div>` : ''}
         <div class="scene-plant${leveledUp ? ' stage-up-flash' : ''}">${stage.emoji}${leveledUp ? sparklesHTML() : ''}</div>
+        <div class="scene-ground-shadow"></div>
         <div class="scene-pot">${pot.emoji}</div>
       </div>
       <div class="goal-card" style="display:block;">
