@@ -35,6 +35,39 @@ const TIERS = [
   { id: 'extreme', name: 'Extreme', points: 8, hint: 'compound ask' }
 ];
 
+/* Curated quick-add activities for categories without a bespoke hub
+   (Movement and Nutrition have their own richer hubs in movement.js/nutrition.js).
+   Difficulty is hand-set per activity, not user-chosen — short/repeatable
+   micro-behaviors are tiered easier, sustained behavior-change asks harder,
+   consistent with habit-formation research (simple repeated actions succeed
+   far more often than complex ones). */
+const CATEGORY_ACTIVITIES = {
+  sleep: [
+    { name: 'Morning sunlight within 30 min of waking', frequency: { type: 'daily' }, tier: 'easy', description: 'Anchors your circadian rhythm — simple and repeatable.' },
+    { name: 'Consistent bedtime', frequency: { type: 'daily' }, tier: 'moderate', description: 'Same sleep and wake time every day, weekends included.' },
+    { name: 'Wind-down routine', frequency: { type: 'daily' }, tier: 'moderate', description: 'A short pre-sleep ritual — reading, stretching, journaling.' },
+    { name: 'No screens 30 min before bed', frequency: { type: 'daily' }, tier: 'hard', description: 'Breaking a habitual behavior is genuinely harder to sustain.' }
+  ],
+  mind: [
+    { name: 'Read 10 pages', frequency: { type: 'daily' }, tier: 'easy', description: 'Short and repeatable — fits almost anywhere in your day.' },
+    { name: 'Journal', frequency: { type: 'daily' }, tier: 'easy', description: 'A few minutes of reflection, low friction.' },
+    { name: 'Practice a new skill', frequency: { type: 'times_per_week', timesPerWeek: 3 }, tier: 'moderate', description: 'Deliberate practice takes real focus and time.' },
+    { name: 'No social media before noon', frequency: { type: 'daily' }, tier: 'hard', description: 'Breaking a default behavior pattern is a real daily ask.' }
+  ],
+  wellness: [
+    { name: 'Gratitude journal (3 things)', frequency: { type: 'daily' }, tier: 'micro', description: 'About as low-friction as a habit gets.' },
+    { name: 'Meditate 10 minutes', frequency: { type: 'daily' }, tier: 'easy', description: 'Short and repeatable, but takes sitting down for it.' },
+    { name: 'Weekly check-in with yourself or a therapist', frequency: { type: 'times_per_week', timesPerWeek: 1 }, tier: 'moderate', description: 'Infrequent but meaningful — weighted for the commitment.' },
+    { name: 'Digital detox hour', frequency: { type: 'daily' }, tier: 'hard', description: 'An hour of resisting a habitual pull, most days.' }
+  ],
+  selfcare: [
+    { name: 'Skincare routine', frequency: { type: 'times_per_day', timesPerDay: 2 }, tier: 'micro', description: 'Quick and repeatable, already part of most routines.' },
+    { name: 'Stretch or self-massage', frequency: { type: 'daily' }, tier: 'easy', description: 'A few minutes of movement, easy to slot in daily.' },
+    { name: 'Nature walk', frequency: { type: 'times_per_week', timesPerWeek: 3 }, tier: 'moderate', description: 'Needs a dedicated block of time, a few times a week.' },
+    { name: 'Cold shower', frequency: { type: 'daily' }, tier: 'hard', description: 'Genuinely uncomfortable every time — a harder daily habit to keep.' }
+  ]
+};
+
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const DAY_FULL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -195,6 +228,12 @@ function freqMultiplier(goal) {
 function pointsPerCompletion(goal) {
   return Math.round(tierOf(goal.tier).points * freqMultiplier(goal));
 }
+function inferTier(frequency) {
+  if (frequency.type === 'times_per_day') return frequency.timesPerDay >= 3 ? 'easy' : 'micro';
+  if (frequency.type === 'weekdays') return frequency.days.length >= 5 ? 'moderate' : 'hard';
+  if (frequency.type === 'times_per_week') return frequency.timesPerWeek >= 4 ? 'moderate' : 'hard';
+  return 'moderate';
+}
 function isScheduled(goal, dateStr) {
   if (dateStr < goal.createdAt) return false;
   const f = goal.frequency;
@@ -354,9 +393,11 @@ function plantCardHTML() {
   const vitality = todayVitality();
   const opacity = (0.55 + 0.45 * vitality).toFixed(2);
   const leveledUp = stageJustLeveledUp(stage);
+  const bg = equippedItem('background');
+  const avatarBg = SCENE_BG_STYLES[bg.id] || SCENE_BG_STYLES.bg_windowsill;
   return `<div class="plant-card">
     <div class="plant-card-top">
-      <div class="plant-avatar${leveledUp ? ' stage-up-flash' : ''}" id="plant-avatar" style="opacity:${opacity};">${stage.emoji}${leveledUp ? sparklesHTML() : ''}</div>
+      <div class="plant-avatar${leveledUp ? ' stage-up-flash' : ''}" id="plant-avatar" style="opacity:${opacity};background:${avatarBg};">${stage.emoji}${leveledUp ? sparklesHTML() : ''}</div>
       <div class="plant-info">
         <div class="plant-stage-name">${stage.name}${next ? '' : ' (fully grown)'}</div>
         <div class="plant-progress-track"><div class="plant-progress-fill" style="width:${next ? pct : 100}%;"></div></div>
@@ -426,6 +467,17 @@ function goalCardHTML(g, today) {
   </div>`;
 }
 
+function keepBuildingNudgeHTML() {
+  const used = new Set(state.goals.map(g => g.category));
+  const suggestions = CATEGORIES.filter(c => c.id !== 'custom' && !used.has(c.id)).slice(0, 3);
+  const chips = suggestions.map(c => `<button class="secondary-btn" style="width:auto;padding:8px 14px;" data-action="select-category" data-id="${c.id}">${c.emoji} ${c.name}</button>`).join('');
+  return `<div class="goal-card" style="display:block;margin-top:14px;border-style:dashed;">
+    <div style="font-weight:700;font-size:13.5px;margin-bottom:4px;">Keep building your routine</div>
+    <p style="font-size:12.5px;color:var(--text-muted);margin:0 0 12px;">A few small habits compound fast — try adding one more.</p>
+    ${chips ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">${chips}</div>` : ''}
+    <button class="link-btn" data-action="go-templates">Or browse templates ${ICONS.chevronRight}</button>
+  </div>`;
+}
 function renderHomeHTML() {
   const today = todayISO();
   let body;
@@ -447,7 +499,8 @@ function renderHomeHTML() {
       return isDayComplete(g, today);
     });
     const bulkBtn = (todos.length > 1 && !allDone) ? `<button class="complete-all-btn" data-action="complete-all">${ICONS.check} Complete all for today</button>` : '';
-    body = plantCardHTML() + `<div class="section-label">Today</div>` + bulkBtn + state.goals.map(g => goalCardHTML(g, today)).join('');
+    const nudge = state.goals.length < 3 ? keepBuildingNudgeHTML() : '';
+    body = plantCardHTML() + `<div class="section-label">Today</div>` + bulkBtn + state.goals.map(g => goalCardHTML(g, today)).join('') + nudge;
   }
   return `
     <div class="header"><div><h1>Routines</h1><div class="subtitle">${formatFriendly(today)}</div></div></div>
@@ -575,7 +628,7 @@ function renderInsightsHTML() {
 }
 
 function resetForm() {
-  form = { category: 'movement', name: '', freqType: 'daily', timesPerDay: 2, days: [], timesPerWeek: 3, tier: 'easy', trigger: '', mode: 'adaptive' };
+  form = { category: 'movement', name: '', freqType: 'daily', timesPerDay: 2, days: [], timesPerWeek: 3, trigger: '', mode: 'adaptive' };
 }
 function renderAddHTML() {
   const catGrid = CATEGORIES.map(c => `<div class="category-chip ${form.category === c.id ? 'selected' : ''}" data-action="select-category" data-id="${c.id}" role="button" tabindex="0" aria-pressed="${form.category === c.id}"><span class="emoji">${c.emoji}</span>${c.name}</div>`).join('');
@@ -594,7 +647,7 @@ function renderAddHTML() {
   } else if (form.freqType === 'times_per_week') {
     freqExtra = `<div class="stepper-row"><button class="stepper-btn" data-action="step-tpw" data-delta="-1" aria-label="Decrease times per week">−</button><div class="stepper-value">${form.timesPerWeek}x / week</div><button class="stepper-btn" data-action="step-tpw" data-delta="1" aria-label="Increase times per week">+</button></div>`;
   }
-  const tierGrid = TIERS.map(t => `<div class="tier-chip ${form.tier === t.id ? 'selected' : ''}" data-action="select-tier" data-id="${t.id}" role="button" tabindex="0" aria-pressed="${form.tier === t.id}">${t.name}<span class="pts-hint">${t.points} pt${t.points > 1 ? 's' : ''}</span></div>`).join('');
+  const inferredTier = tierOf(inferTier(freqObjFromForm()));
   const modeRow = `<div class="mode-toggle-row">
     <div class="mode-chip ${form.mode === 'adaptive' ? 'selected' : ''}" data-action="select-mode" data-id="adaptive" role="button" tabindex="0" aria-pressed="${form.mode === 'adaptive'}">
       <div class="mode-name">Adaptive</div><div class="mode-desc">Miss a day, use a streak freeze instead of losing everything.</div>
@@ -610,10 +663,14 @@ function renderAddHTML() {
       <div class="form-group"><label>Category</label><div class="category-grid">${catGrid}</div></div>
       <div class="form-group"><label>Name</label><input type="text" id="goal-name-input" placeholder="e.g. Morning run" value="${escapeHtml(form.name)}"></div>
       <div class="form-group"><label>Frequency</label><div class="freq-type-grid">${freqGrid}</div>${freqExtra}</div>
-      <div class="form-group"><label>Difficulty</label><div class="tier-grid">${tierGrid}</div></div>
+      <div class="form-group">
+        <label>Difficulty</label>
+        <div class="inferred-tier-row"><span class="tier-chip selected" style="pointer-events:none;">${inferredTier.name}<span class="pts-hint">${inferredTier.points} pt${inferredTier.points > 1 ? 's' : ''}</span></span></div>
+        <p class="field-hint">Set automatically from how often you're doing this — less frequent asks are weighted harder.</p>
+      </div>
       <div class="form-group"><label>If you miss a day</label>${modeRow}</div>
       <div class="form-group"><label>Trigger (optional)</label><input type="text" id="goal-trigger-input" placeholder="e.g. Right after breakfast" value="${escapeHtml(form.trigger)}"></div>
-      <button class="primary-btn" data-action="save-goal">Save routine · worth ${pointsPerCompletion({ tier: form.tier, frequency: freqObjFromForm() })} pts</button>
+      <button class="primary-btn" data-action="save-goal">Save routine · worth ${pointsPerCompletion({ tier: inferredTier.id, frequency: freqObjFromForm() })} pts</button>
     </div>
   `;
 }
@@ -622,6 +679,27 @@ function freqObjFromForm() {
   if (form.freqType === 'weekdays') return { type: 'weekdays', days: form.days };
   if (form.freqType === 'times_per_week') return { type: 'times_per_week', timesPerWeek: form.timesPerWeek };
   return { type: 'daily' };
+}
+
+function renderCategoryHubHTML(categoryId) {
+  const cat = catOf(categoryId);
+  const activities = CATEGORY_ACTIVITIES[categoryId] || [];
+  const cards = activities.map((a, idx) => `<div class="subgoal-card">
+    <div class="subgoal-emoji">${cat.emoji}</div>
+    <div class="subgoal-info">
+      <div class="subgoal-title">${a.name}</div>
+      <div class="subgoal-desc">${a.description}</div>
+      <div class="subgoal-meta">${freqLabel({ frequency: a.frequency })} · ${tierOf(a.tier).name}</div>
+    </div>
+    <button class="secondary-btn" style="width:auto;padding:8px 16px;flex-shrink:0;" data-action="quick-add-generic" data-category="${categoryId}" data-idx="${idx}">Add</button>
+  </div>`).join('');
+  return `${headerWithBack(cat.name)}
+    <div class="screen">
+      <p style="font-size:13px;color:var(--text-muted);margin-top:0;">Pick something to get started — difficulty is set automatically based on how demanding and frequent each one is.</p>
+      ${cards}
+      <button class="link-btn" style="margin-top:10px;" data-action="go-add-manual" data-category="${categoryId}">Or build a custom routine</button>
+    </div>
+    ${bottomNavHTML('home')}`;
 }
 
 function renderTemplatesHTML() {
@@ -723,6 +801,7 @@ function render() {
     case 'nutritionProfile': html = renderNutritionProfileHTML(); break;
     case 'mealPlanBuilder': html = renderMealPlanBuilderHTML(); break;
     case 'movementHub': html = renderMovementHubHTML(); break;
+    case 'categoryHub': html = renderCategoryHubHTML(view.categoryId); break;
     case 'templates': html = renderTemplatesHTML(); break;
     case 'templatePreview': html = renderTemplatePreviewHTML(view.templateId); break;
     case 'detail':
@@ -872,8 +951,21 @@ const handlers = {
     const id = el.dataset.id;
     if (id === 'movement') { navStack.push(view); view = { name: 'movementHub' }; render(); return; }
     if (id === 'nutrition') { navStack.push(view); view = { name: 'nutritionHub' }; render(); return; }
+    if (CATEGORY_ACTIVITIES[id]) { navStack.push(view); view = { name: 'categoryHub', categoryId: id }; render(); return; }
     form.category = id;
     render();
+  },
+  'quick-add-generic': (el) => {
+    const activities = CATEGORY_ACTIVITIES[el.dataset.category] || [];
+    const a = activities[parseInt(el.dataset.idx, 10)];
+    if (!a) return;
+    const goal = buildGoal({ name: a.name, category: el.dataset.category, frequency: a.frequency, tier: a.tier, mode: 'adaptive' });
+    state.goals.push(goal);
+    saveState();
+    navStack = [];
+    view = { name: 'home' };
+    render();
+    showToast(`${catOf(el.dataset.category).emoji} ${a.name} added`);
   },
   'go-add-manual': (el) => {
     navStack.push(view);
@@ -891,7 +983,6 @@ const handlers = {
     if (idx >= 0) form.days.splice(idx, 1); else form.days.push(day);
     render();
   },
-  'select-tier': (el) => { form.tier = el.dataset.id; render(); },
   'select-mode': (el) => { form.mode = el.dataset.id; render(); },
   'select-template-mode': (el) => { form.templateMode = el.dataset.id; render(); },
   'toggle-template-activity': (el) => {
@@ -936,7 +1027,7 @@ const handlers = {
       name,
       category: form.category,
       frequency,
-      tier: form.tier,
+      tier: inferTier(frequency),
       trigger: (form.trigger || '').trim(),
       mode: form.mode,
       createdAt: todayISO(),

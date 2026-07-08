@@ -125,16 +125,18 @@ svg.icon { display: block; flex-shrink: 0; }
 }
 .plant-card-top { display: flex; align-items: center; gap: 14px; }
 .plant-avatar {
-  width: 60px;
-  height: 60px;
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
-  background: var(--primary-light);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 30px;
+  font-size: 38px;
   flex-shrink: 0;
   position: relative;
+  overflow: hidden;
+  border: 1.5px solid rgba(0,0,0,0.06);
+  box-shadow: inset 0 -6px 10px rgba(0,0,0,0.08);
   transition: opacity 0.2s, filter 0.2s;
   animation: plant-sway 4s ease-in-out infinite;
 }
@@ -491,6 +493,9 @@ svg.icon { display: block; flex-shrink: 0; }
 .category-chip.selected, .tier-chip.selected { border-color: var(--primary); background: var(--primary-light); color: var(--primary-dark); }
 .tier-chip .pts-hint { display: block; font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
 .tier-chip.selected .pts-hint { color: var(--primary-dark); }
+.inferred-tier-row { display: flex; }
+.inferred-tier-row .tier-chip { display: inline-flex; flex-direction: column; align-items: center; min-width: 110px; padding: 10px 16px; }
+.field-hint { font-size: 11.5px; color: var(--text-muted); margin: 8px 0 0; line-height: 1.4; }
 
 input[type="text"], input[type="number"] {
   width: 100%;
