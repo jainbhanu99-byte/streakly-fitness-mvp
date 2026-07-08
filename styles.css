@@ -586,6 +586,23 @@ input[type="text"]:focus, input[type="number"]:focus { outline: none; border-col
 }
 @keyframes toast-in { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
 @keyframes toast-out { to { opacity: 0; } }
+.toast-undo {
+  white-space: normal;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  animation: toast-in 0.25s ease, toast-out 0.25s ease 4.75s forwards;
+}
+.toast-undo-btn {
+  background: none;
+  border: none;
+  color: #A9D6AD;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
 
 @keyframes leaf-pop {
   0% { transform: scale(1); }

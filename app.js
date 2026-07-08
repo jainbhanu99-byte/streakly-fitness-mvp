@@ -112,6 +112,7 @@ let state = { goals: [], garden: null };
 let view = { name: 'home', goalId: null, templateId: null };
 let navStack = [];
 let form = null;
+let pendingImport = null;
 
 /* ---------- date helpers ---------- */
 function pad2(n) { return n < 10 ? '0' + n : '' + n; }
@@ -155,19 +156,23 @@ function defaultGarden() {
     equipped: { pot: DEFAULT_POT.id, background: DEFAULT_BG.id, decoration: null }
   };
 }
+function normalizeState(parsed) {
+  if (!parsed || typeof parsed !== 'object') return null;
+  if (!parsed.garden || typeof parsed.garden !== 'object') parsed.garden = defaultGarden();
+  if (!Array.isArray(parsed.goals)) parsed.goals = [];
+  parsed.goals.forEach(g => {
+    if (!g.checkins) g.checkins = {};
+    if (!g.freezesApplied) g.freezesApplied = {};
+    if (!g.freezeDismissed) g.freezeDismissed = {};
+  });
+  return parsed;
+}
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw);
-      if (!parsed.garden) parsed.garden = defaultGarden();
-      if (!Array.isArray(parsed.goals)) parsed.goals = [];
-      parsed.goals.forEach(g => {
-        if (!g.checkins) g.checkins = {};
-        if (!g.freezesApplied) g.freezesApplied = {};
-        if (!g.freezeDismissed) g.freezeDismissed = {};
-      });
-      return parsed;
+      const normalized = normalizeState(JSON.parse(raw));
+      if (normalized) return normalized;
     }
   } catch (e) { /* ignore corrupt data */ }
   return { goals: [], garden: defaultGarden() };
@@ -301,11 +306,21 @@ function goalMissedYesterday(goal) {
   if (target === 0) return false;
   return completionsOn(goal, yesterday) < target;
 }
+function canRetroFreezeYesterday(goal) {
+  if (goal.mode !== 'adaptive' || goal.frequency.type === 'times_per_week') return false;
+  const yesterday = addDays(todayISO(), -1);
+  if (yesterday < goal.createdAt) return false;
+  if (goal.freezesApplied && goal.freezesApplied[yesterday]) return false;
+  if (!(goal.freezeDismissed && goal.freezeDismissed[yesterday])) return false;
+  const target = targetForDay(goal, yesterday);
+  if (target === 0) return false;
+  return completionsOn(goal, yesterday) < target;
+}
 
 /* ---------- rendering helpers ---------- */
 function headerWithBack(title) {
   return `<div class="header">
-    <button class="header-icon-btn" data-action="go-back">${ICONS.back}</button>
+    <button class="header-icon-btn" data-action="go-back" aria-label="Back">${ICONS.back}</button>
     <h1 style="font-size:17px;">${title}</h1>
     <div style="width:38px;"></div>
   </div>`;
@@ -381,16 +396,17 @@ function goalCardHTML(g, today) {
     return `<span style="width:9px;height:9px;border-radius:3px;${cls === 'on' ? 'background:var(--primary);' : cls === 'miss' ? 'background:#E7BDAF;' : cls === 'rest-day' ? 'background:transparent;border:1.5px dashed var(--border);' : 'background:var(--border);'}"></span>`;
   }).join('')}</div>`;
   const banner = goalMissedYesterday(g) ? freezeBannerHTML(g) : '';
+  const circleA11y = tapAction ? `role="button" tabindex="0" aria-label="${escapeHtml(g.name)} — mark complete" aria-pressed="${circleClass === 'done'}"` : '';
   return `<div class="goal-card" data-goal-swipe="${g.id}">
     <div class="goal-card-inner">
-      <div class="check-circle ${circleClass}" ${tapAction}>${circleContent}</div>
-      <div class="goal-card-info" data-action="go-detail" data-id="${g.id}">
+      <div class="check-circle ${circleClass}" ${tapAction} ${circleA11y}>${circleContent}</div>
+      <div class="goal-card-info" data-action="go-detail" data-id="${g.id}" role="button" tabindex="0" aria-label="${escapeHtml(g.name)} details">
         <div class="goal-name">${cat.emoji} ${escapeHtml(g.name)}</div>
         <div class="goal-meta"><span class="streak-pill">${ICONS.bolt}${stats.current}</span><span class="pts-pill">+${pointsPerCompletion(g)}</span><span>${freqLabel(g)}</span></div>
         ${miniHeat}
         ${banner}
       </div>
-      <div class="chevron" data-action="go-detail" data-id="${g.id}">${ICONS.chevronRight}</div>
+      <div class="chevron" aria-hidden="true">${ICONS.chevronRight}</div>
     </div>
   </div>`;
 }
@@ -421,7 +437,7 @@ function renderHomeHTML() {
   return `
     <div class="header"><div><h1>Routines</h1><div class="subtitle">${formatFriendly(today)}</div></div></div>
     <div class="screen">${body}</div>
-    <button class="fab" data-action="go-add">${ICONS.plus}</button>
+    <button class="fab" data-action="go-add" aria-label="Add a routine">${ICONS.plus}</button>
     ${bottomNavHTML('home')}
   `;
 }
@@ -467,11 +483,33 @@ function renderGardenHTML() {
   `;
 }
 
+function dataBackupCardHTML() {
+  if (pendingImport) {
+    return `<div class="goal-card" style="display:block;">
+      <div class="section-label" style="margin-bottom:6px;">Import data</div>
+      <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px;">This replaces all current routines, points, and history on this device. This cannot be undone.</p>
+      <div style="display:flex;gap:10px;">
+        <button class="secondary-btn" style="width:auto;padding:10px 18px;" data-action="cancel-import">Cancel</button>
+        <button class="primary-btn" style="width:auto;padding:10px 18px;margin-top:0;background:var(--accent-dark);" data-action="confirm-import">Yes, replace my data</button>
+      </div>
+    </div>`;
+  }
+  return `<div class="goal-card" style="display:block;">
+    <div class="section-label" style="margin-bottom:6px;">Data &amp; backup</div>
+    <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px;">Your data lives only in this browser. Export a backup so you don't lose it.</p>
+    <div style="display:flex;gap:10px;">
+      <button class="secondary-btn" style="width:auto;padding:10px 18px;" data-action="export-data">Export data</button>
+      <button class="secondary-btn" style="width:auto;padding:10px 18px;" data-action="trigger-import">Import data</button>
+    </div>
+    <input type="file" id="import-file-input" accept="application/json" style="display:none;" aria-label="Choose a backup file to import">
+  </div>`;
+}
 function renderInsightsHTML() {
   const today = todayISO();
   if (state.goals.length === 0) {
     return `<div class="header"><div><h1>Insights</h1><div class="subtitle">Your consistency, at a glance</div></div></div>
       <div class="screen"><div class="empty-state"><div class="emoji">📊</div><h3>Nothing to show yet</h3><p>Add a routine to see insights here.</p></div></div>
+      ${dataBackupCardHTML()}
       ${bottomNavHTML('insights')}`;
   }
   const allStats = state.goals.map(g => ({ g, stats: computeStats(g) }));
@@ -516,6 +554,7 @@ function renderInsightsHTML() {
       <div class="goal-card" style="display:block;background:var(--primary-light);border:none;">
         <div style="font-size:13.5px;font-weight:600;color:var(--primary-dark);line-height:1.5;">"${quote}"</div>
       </div>
+      ${dataBackupCardHTML()}
     </div>
     ${bottomNavHTML('insights')}
   `;
@@ -525,28 +564,28 @@ function resetForm() {
   form = { category: 'movement', name: '', freqType: 'daily', timesPerDay: 2, days: [], timesPerWeek: 3, tier: 'easy', trigger: '', mode: 'adaptive' };
 }
 function renderAddHTML() {
-  const catGrid = CATEGORIES.map(c => `<div class="category-chip ${form.category === c.id ? 'selected' : ''}" data-action="select-category" data-id="${c.id}"><span class="emoji">${c.emoji}</span>${c.name}</div>`).join('');
+  const catGrid = CATEGORIES.map(c => `<div class="category-chip ${form.category === c.id ? 'selected' : ''}" data-action="select-category" data-id="${c.id}" role="button" tabindex="0" aria-pressed="${form.category === c.id}"><span class="emoji">${c.emoji}</span>${c.name}</div>`).join('');
   const freqTypes = [
     { id: 'daily', label: 'Every day' },
     { id: 'times_per_day', label: 'N times a day' },
     { id: 'weekdays', label: 'Specific days' },
     { id: 'times_per_week', label: 'N times a week' }
   ];
-  const freqGrid = freqTypes.map(f => `<div class="freq-type-chip ${form.freqType === f.id ? 'selected' : ''}" data-action="select-freqtype" data-id="${f.id}">${f.label}</div>`).join('');
+  const freqGrid = freqTypes.map(f => `<div class="freq-type-chip ${form.freqType === f.id ? 'selected' : ''}" data-action="select-freqtype" data-id="${f.id}" role="button" tabindex="0" aria-pressed="${form.freqType === f.id}">${f.label}</div>`).join('');
   let freqExtra = '';
   if (form.freqType === 'times_per_day') {
-    freqExtra = `<div class="stepper-row"><button class="stepper-btn" data-action="step-tpd" data-delta="-1">−</button><div class="stepper-value">${form.timesPerDay}x / day</div><button class="stepper-btn" data-action="step-tpd" data-delta="1">+</button></div>`;
+    freqExtra = `<div class="stepper-row"><button class="stepper-btn" data-action="step-tpd" data-delta="-1" aria-label="Decrease times per day">−</button><div class="stepper-value">${form.timesPerDay}x / day</div><button class="stepper-btn" data-action="step-tpd" data-delta="1" aria-label="Increase times per day">+</button></div>`;
   } else if (form.freqType === 'weekdays') {
-    freqExtra = `<div class="day-toggle-row">${DAYS.map((d, i) => `<div class="day-toggle ${form.days.includes(i) ? 'selected' : ''}" data-action="toggle-day" data-day="${i}">${d}</div>`).join('')}</div>`;
+    freqExtra = `<div class="day-toggle-row">${DAYS.map((d, i) => `<div class="day-toggle ${form.days.includes(i) ? 'selected' : ''}" data-action="toggle-day" data-day="${i}" role="button" tabindex="0" aria-pressed="${form.days.includes(i)}" aria-label="${DAY_FULL[i]}">${d}</div>`).join('')}</div>`;
   } else if (form.freqType === 'times_per_week') {
-    freqExtra = `<div class="stepper-row"><button class="stepper-btn" data-action="step-tpw" data-delta="-1">−</button><div class="stepper-value">${form.timesPerWeek}x / week</div><button class="stepper-btn" data-action="step-tpw" data-delta="1">+</button></div>`;
+    freqExtra = `<div class="stepper-row"><button class="stepper-btn" data-action="step-tpw" data-delta="-1" aria-label="Decrease times per week">−</button><div class="stepper-value">${form.timesPerWeek}x / week</div><button class="stepper-btn" data-action="step-tpw" data-delta="1" aria-label="Increase times per week">+</button></div>`;
   }
-  const tierGrid = TIERS.map(t => `<div class="tier-chip ${form.tier === t.id ? 'selected' : ''}" data-action="select-tier" data-id="${t.id}">${t.name}<span class="pts-hint">${t.points} pt${t.points > 1 ? 's' : ''}</span></div>`).join('');
+  const tierGrid = TIERS.map(t => `<div class="tier-chip ${form.tier === t.id ? 'selected' : ''}" data-action="select-tier" data-id="${t.id}" role="button" tabindex="0" aria-pressed="${form.tier === t.id}">${t.name}<span class="pts-hint">${t.points} pt${t.points > 1 ? 's' : ''}</span></div>`).join('');
   const modeRow = `<div class="mode-toggle-row">
-    <div class="mode-chip ${form.mode === 'adaptive' ? 'selected' : ''}" data-action="select-mode" data-id="adaptive">
+    <div class="mode-chip ${form.mode === 'adaptive' ? 'selected' : ''}" data-action="select-mode" data-id="adaptive" role="button" tabindex="0" aria-pressed="${form.mode === 'adaptive'}">
       <div class="mode-name">Adaptive</div><div class="mode-desc">Miss a day, use a streak freeze instead of losing everything.</div>
     </div>
-    <div class="mode-chip ${form.mode === 'purist' ? 'selected' : ''}" data-action="select-mode" data-id="purist">
+    <div class="mode-chip ${form.mode === 'purist' ? 'selected' : ''}" data-action="select-mode" data-id="purist" role="button" tabindex="0" aria-pressed="${form.mode === 'purist'}">
       <div class="mode-name">Purist</div><div class="mode-desc">True to the original — any miss resets the streak.</div>
     </div>
   </div>`;
@@ -583,12 +622,12 @@ function renderTemplatePreviewHTML(templateId) {
   if (!form.templateSelected) form.templateSelected = t.activities.map(() => true);
   if (t.supportsMode && !form.templateMode) form.templateMode = 'adaptive';
   const rows = t.activities.map((a, i) => `<div class="template-activity-row">
-    <div class="checkbox-toggle ${form.templateSelected[i] ? 'checked' : ''}" data-action="toggle-template-activity" data-idx="${i}">${form.templateSelected[i] ? ICONS.check : ''}</div>
+    <div class="checkbox-toggle ${form.templateSelected[i] ? 'checked' : ''}" data-action="toggle-template-activity" data-idx="${i}" role="checkbox" tabindex="0" aria-checked="${form.templateSelected[i]}" aria-label="${escapeHtml(a.name)}">${form.templateSelected[i] ? ICONS.check : ''}</div>
     <div class="ta-name">${catOf(a.category).emoji} ${a.name}<div class="ta-meta">${a.frequency.type === 'times_per_day' ? a.frequency.timesPerDay + 'x/day' : a.frequency.type === 'times_per_week' ? a.frequency.timesPerWeek + 'x/week' : 'Daily'} · ${tierOf(a.tier).points} pts</div></div>
   </div>`).join('');
   const modeRow = t.supportsMode ? `<div class="form-group"><label>Mode</label><div class="mode-toggle-row">
-    <div class="mode-chip ${form.templateMode === 'adaptive' ? 'selected' : ''}" data-action="select-template-mode" data-id="adaptive"><div class="mode-name">Adaptive</div><div class="mode-desc">Streak freezes instead of a hard reset.</div></div>
-    <div class="mode-chip ${form.templateMode === 'purist' ? 'selected' : ''}" data-action="select-template-mode" data-id="purist"><div class="mode-name">Purist</div><div class="mode-desc">Original rules — any miss resets.</div></div>
+    <div class="mode-chip ${form.templateMode === 'adaptive' ? 'selected' : ''}" data-action="select-template-mode" data-id="adaptive" role="button" tabindex="0" aria-pressed="${form.templateMode === 'adaptive'}"><div class="mode-name">Adaptive</div><div class="mode-desc">Streak freezes instead of a hard reset.</div></div>
+    <div class="mode-chip ${form.templateMode === 'purist' ? 'selected' : ''}" data-action="select-template-mode" data-id="purist" role="button" tabindex="0" aria-pressed="${form.templateMode === 'purist'}"><div class="mode-name">Purist</div><div class="mode-desc">Original rules — any miss resets.</div></div>
   </div></div>` : '';
   const count = form.templateSelected.filter(Boolean).length;
   return `${headerWithBack(t.name)}<div class="screen">
@@ -624,6 +663,12 @@ function renderDetailHTML(goalId) {
     heatSection = `<div class="goal-card" style="display:block;"><div class="section-label" style="margin-bottom:6px;">This week</div><div style="font-size:26px;font-weight:700;color:var(--primary-dark);">${stats.thisWeekCount} / ${stats.weeklyTarget}</div></div>`;
   }
   const modeNote = g.mode === 'purist' ? 'Purist mode — any miss resets this streak.' : 'Adaptive mode — streak freezes protect a missed day.';
+  const retroFreeze = canRetroFreezeYesterday(g) && state.garden.freezeInventory > 0
+    ? `<div class="goal-card" style="display:block;">
+        Changed your mind? You can still protect yesterday.
+        <button class="secondary-btn" style="width:auto;padding:8px 16px;margin-top:8px;" data-action="use-freeze" data-id="${g.id}" data-date="${addDays(todayISO(), -1)}">Use a freeze for yesterday</button>
+      </div>`
+    : '';
   const deleteRow = view.confirmDelete === g.id
     ? `<div style="display:flex;gap:10px;justify-content:center;margin-top:24px;">
         <button class="secondary-btn" style="width:auto;padding:10px 18px;" data-action="cancel-delete">Cancel</button>
@@ -638,6 +683,7 @@ function renderDetailHTML(goalId) {
         <div class="stat-box"><div class="num">${stats.total}</div><div class="lbl">Total</div></div>
       </div>
       <div style="font-size:13px;color:var(--text-muted);margin:-10px 0 20px;">${freqLabel(g)} · ${pointsPerCompletion(g)} pts each${g.trigger ? ' · ' + escapeHtml(g.trigger) : ''}<br>${modeNote}</div>
+      ${retroFreeze}
       ${heatSection}
       ${deleteRow}
     </div>
@@ -668,9 +714,34 @@ function showToast(msg) {
   if (existing) existing.remove();
   const div = document.createElement('div');
   div.className = 'toast';
+  div.setAttribute('role', 'status');
+  div.setAttribute('aria-live', 'polite');
   div.textContent = msg;
   app.appendChild(div);
   setTimeout(() => { if (div.parentNode) div.parentNode.removeChild(div); }, 2300);
+}
+function showUndoToast(msg, onUndo) {
+  const app = document.getElementById('app');
+  const existing = app.querySelector('.toast');
+  if (existing) existing.remove();
+  const div = document.createElement('div');
+  div.className = 'toast toast-undo';
+  div.setAttribute('role', 'status');
+  div.setAttribute('aria-live', 'polite');
+  const span = document.createElement('span');
+  span.textContent = msg;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'toast-undo-btn';
+  btn.textContent = 'Undo';
+  btn.addEventListener('click', () => {
+    if (div.parentNode) div.parentNode.removeChild(div);
+    onUndo();
+  });
+  div.appendChild(span);
+  div.appendChild(btn);
+  app.appendChild(div);
+  setTimeout(() => { if (div.parentNode) div.parentNode.removeChild(div); }, 5000);
 }
 function popPlant() {
   const el = document.getElementById('plant-avatar');
@@ -823,11 +894,45 @@ const handlers = {
   'delete-goal': (el) => { view.confirmDelete = el.dataset.id; render(); },
   'cancel-delete': () => { view.confirmDelete = null; render(); },
   'confirm-delete-goal': (el) => {
-    state.goals = state.goals.filter(g => g.id !== el.dataset.id);
+    const idx = state.goals.findIndex(g => g.id === el.dataset.id);
+    if (idx === -1) return;
+    const [removed] = state.goals.splice(idx, 1);
     saveState();
     navStack = [];
     view = { name: 'home' };
     render();
+    showUndoToast(`${removed.name} deleted`, () => {
+      state.goals.splice(Math.min(idx, state.goals.length), 0, removed);
+      saveState();
+      render();
+    });
+  },
+  'export-data': () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sprout-backup-${todayISO()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast('Backup downloaded');
+  },
+  'trigger-import': () => {
+    const input = document.getElementById('import-file-input');
+    if (input) input.click();
+  },
+  'cancel-import': () => { pendingImport = null; render(); },
+  'confirm-import': () => {
+    if (!pendingImport) return;
+    state = pendingImport;
+    pendingImport = null;
+    saveState();
+    navStack = [];
+    view = { name: 'insights' };
+    render();
+    showToast('Data imported');
   },
   'shop-buy': (el) => {
     const item = SHOP_ITEMS.find(i => i.id === el.dataset.id);
@@ -891,10 +996,32 @@ function onAppClick(e) {
   const action = t.dataset.action;
   if (handlers[action]) handlers[action](t, e);
 }
+function onAppKeydown(e) {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const t = e.target.closest('[data-action][role="button"], [data-action][role="checkbox"]');
+  if (!t || t.hasAttribute('disabled')) return;
+  e.preventDefault();
+  const action = t.dataset.action;
+  if (handlers[action]) handlers[action](t, e);
+}
 function onAppInput(e) {
   if (!form) return;
   if (e.target.id === 'goal-name-input') form.name = e.target.value;
   else if (e.target.id === 'goal-trigger-input') form.trigger = e.target.value;
+}
+function onAppChange(e) {
+  if (e.target.id !== 'import-file-input' || !e.target.files || !e.target.files[0]) return;
+  const file = e.target.files[0];
+  const reader = new FileReader();
+  reader.onload = () => {
+    let normalized = null;
+    try { normalized = normalizeState(JSON.parse(reader.result)); } catch (err) { /* invalid JSON */ }
+    if (!normalized) { showToast('That file is not a valid Sprout backup'); return; }
+    pendingImport = normalized;
+    render();
+  };
+  reader.readAsText(file);
+  e.target.value = '';
 }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -902,7 +1029,9 @@ document.addEventListener('DOMContentLoaded', function () {
   resetForm();
   const app = document.getElementById('app');
   app.addEventListener('click', onAppClick);
+  app.addEventListener('keydown', onAppKeydown);
   app.addEventListener('input', onAppInput);
+  app.addEventListener('change', onAppChange);
   app.addEventListener('touchstart', onTouchStart, { passive: true });
   app.addEventListener('touchmove', onTouchMove, { passive: true });
   app.addEventListener('touchend', onTouchEnd);
