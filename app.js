@@ -863,6 +863,8 @@ function popPlant() {
   if (el) { el.classList.remove('leaf-pop'); void el.offsetWidth; el.classList.add('leaf-pop'); waterPlantFX(el); }
   const gardenEl = document.getElementById('garden-plant-scene');
   if (gardenEl) waterPlantFX(gardenEl);
+  const leveledUp = !!document.querySelector('.stage-up-flash');
+  window.dispatchEvent(new CustomEvent(leveledUp ? 'sprout:stageup' : 'sprout:checkin'));
 }
 
 /* ---------- actions ---------- */
