@@ -198,6 +198,7 @@ function normalizeState(parsed) {
     if (!g.checkins) g.checkins = {};
     if (!g.freezesApplied) g.freezesApplied = {};
     if (!g.freezeDismissed) g.freezeDismissed = {};
+    if (typeof g.shared !== 'boolean') g.shared = false;
   });
   if (parsed.profile !== null && typeof parsed.profile !== 'undefined' && typeof parsed.profile !== 'object') parsed.profile = null;
   if (typeof parsed.profile === 'undefined') parsed.profile = null;
@@ -216,7 +217,10 @@ function loadState() {
   } catch (e) { /* ignore corrupt data */ }
   return { goals: [], garden: defaultGarden(), profile: null, mealPlans: [], meta: { onboardingSeen: false } };
 }
-function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (typeof scheduleCloudPush === 'function') scheduleCloudPush();
+}
 
 /* ---------- frequency / scheduling ---------- */
 function freqMultiplier(goal) {
@@ -550,6 +554,25 @@ function renderGardenHTML() {
   `;
 }
 
+function socialCardHTML() {
+  if (!FIREBASE_CONFIGURED) return '';
+  if (!isSignedIn()) {
+    return `<div class="goal-card" style="display:block;">
+      <div class="section-label" style="margin-bottom:6px;">Friends</div>
+      <p style="font-size:13px;color:var(--text-muted);margin:0 0 10px;">Sign in to sync your data to the cloud and add friends.</p>
+      <button class="secondary-btn" data-action="go-signin">Sign in with Google</button>
+    </div>`;
+  }
+  return `<div class="goal-card" style="display:block;">
+    <div class="section-label" style="margin-bottom:6px;">Friends</div>
+    <p style="font-size:13px;color:var(--text-muted);margin:0 0 10px;">Signed in as @${escapeHtml((socialState.profile && socialState.profile.username) || '...')}</p>
+    <div style="display:flex;gap:10px;">
+      <button class="secondary-btn" data-action="go-friends-hub">👥 Friends</button>
+      <button class="secondary-btn" data-action="go-squad">🛡️ Squad</button>
+    </div>
+    <button class="link-btn" style="margin-top:10px;" data-action="do-signout">Sign out</button>
+  </div>`;
+}
 function dataBackupCardHTML() {
   if (pendingImport) {
     return `<div class="goal-card" style="display:block;">
@@ -577,6 +600,7 @@ function renderInsightsHTML() {
   if (state.goals.length === 0) {
     return `<div class="header"><div><h1>Insights</h1><div class="subtitle">Your consistency, at a glance</div></div></div>
       <div class="screen"><div class="empty-state"><div class="emoji">📊</div><h3>Nothing to show yet</h3><p>Add a routine to see insights here.</p></div></div>
+      ${socialCardHTML()}
       ${dataBackupCardHTML()}
       ${bottomNavHTML('insights')}`;
   }
@@ -622,6 +646,7 @@ function renderInsightsHTML() {
       <div class="goal-card" style="display:block;background:var(--primary-light);border:none;">
         <div style="font-size:13.5px;font-weight:600;color:var(--primary-dark);line-height:1.5;">"${quote}"</div>
       </div>
+      ${socialCardHTML()}
       ${dataBackupCardHTML()}
     </div>
     ${bottomNavHTML('insights')}
@@ -768,6 +793,13 @@ function renderDetailHTML(goalId) {
         <button class="primary-btn" style="width:auto;padding:10px 18px;margin-top:0;background:var(--accent-dark);" data-action="confirm-delete-goal" data-id="${g.id}">Yes, delete</button>
       </div>`
     : `<button class="delete-link" data-action="delete-goal" data-id="${g.id}">Delete this routine</button>`;
+  const shareRow = isSignedIn() ? `<div class="goal-card" style="display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <div style="font-weight:700;font-size:13.5px;">Share with friends</div>
+        <div style="font-size:12px;color:var(--text-muted);">Visible on your Friends screen to people you've added</div>
+      </div>
+      <div class="check-circle ${g.shared ? 'done' : ''}" style="width:32px;height:32px;flex-shrink:0;" data-action="toggle-routine-shared" data-id="${g.id}" role="switch" tabindex="0" aria-checked="${!!g.shared}">${g.shared ? ICONS.check : ''}</div>
+    </div>` : '';
   return `${headerWithBack(catOf(g.category).emoji + ' ' + escapeHtml(g.name))}
     <div class="screen">
       <div class="stat-row">
@@ -778,6 +810,7 @@ function renderDetailHTML(goalId) {
       <div style="font-size:13px;color:var(--text-muted);margin:-10px 0 20px;">${freqLabel(g)} · ${pointsPerCompletion(g)} pts each${g.trigger ? ' · ' + escapeHtml(g.trigger) : ''}<br>${modeNote}</div>
       ${retroFreeze}
       ${heatSection}
+      ${shareRow}
       ${deleteRow}
     </div>
   `;
@@ -803,6 +836,12 @@ function render() {
     case 'mealPlanBuilder': html = renderMealPlanBuilderHTML(); break;
     case 'movementHub': html = renderMovementHubHTML(); break;
     case 'categoryHub': html = renderCategoryHubHTML(view.categoryId); break;
+    case 'signIn': html = renderSignInHTML(); break;
+    case 'usernameSetup': html = renderUsernameSetupHTML(); break;
+    case 'migrationPrompt': html = renderMigrationPromptHTML(); break;
+    case 'friendsHub': html = renderFriendsHubHTML(); break;
+    case 'friendDetail': html = renderFriendDetailHTML(view.friendUid); break;
+    case 'squadHub': html = renderSquadHTML(); break;
     case 'templates': html = renderTemplatesHTML(); break;
     case 'templatePreview': html = renderTemplatePreviewHTML(view.templateId); break;
     case 'detail':
@@ -876,7 +915,8 @@ function buildGoal(overrides) {
     createdAt: todayISO(),
     checkins: {},
     freezesApplied: {},
-    freezeDismissed: {}
+    freezeDismissed: {},
+    shared: false
   }, overrides);
 }
 function applyCheckinDelta(goal, dateStr, nextCount) {
@@ -1112,7 +1152,7 @@ const handlers = {
     showToast(owned ? item.name + ' equipped' : item.name + ' purchased and equipped');
   }
 };
-Object.assign(handlers, nutritionHandlers, movementHandlers, onboardingHandlers);
+Object.assign(handlers, nutritionHandlers, movementHandlers, onboardingHandlers, socialHandlers);
 
 /* ---------- swipe-to-complete ---------- */
 let swipeState = null;
@@ -1170,6 +1210,10 @@ function onAppInput(e) {
   else if (profileForm && id === 'profile-height-input') profileForm.heightCm = parseFloat(e.target.value) || 0;
   else if (id === 'meal-search-input') { mealSearchQuery = e.target.value; render(); }
   else if (id === 'meal-plan-name-input') mealPlanName = e.target.value;
+  else if (id === 'username-input') socialState.usernameInput = e.target.value;
+  else if (id === 'friend-search-input') socialState.friendSearchQuery = e.target.value;
+  else if (id === 'invite-code-input') socialState.inviteCodeInput = e.target.value;
+  else if (id === 'squad-name-input') socialState.squadNameInput = e.target.value;
 }
 function onAppChange(e) {
   if (e.target.id !== 'import-file-input' || !e.target.files || !e.target.files[0]) return;
