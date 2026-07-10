@@ -560,7 +560,7 @@ function socialCardHTML() {
     return `<div class="goal-card" style="display:block;">
       <div class="section-label" style="margin-bottom:6px;">Friends</div>
       <p style="font-size:13px;color:var(--text-muted);margin:0 0 10px;">Sign in to sync your data to the cloud and add friends.</p>
-      <button class="secondary-btn" data-action="go-signin">Sign in with Google</button>
+      ${googleSignInButtonHTML('go-signin')}
     </div>`;
   }
   return `<div class="goal-card" style="display:block;">

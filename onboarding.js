@@ -6,11 +6,33 @@ const ONBOARDING_SLIDES = [
   { emoji: '📊', title: 'See your consistency', body: 'Streaks, weekly completion, and category breakdowns at a glance — plus export a backup any time so your data is never trapped in one browser.' }
 ];
 
+function onboardingHasAuthSlide() {
+  return typeof FIREBASE_CONFIGURED !== 'undefined' && FIREBASE_CONFIGURED;
+}
+function onboardingSlideCount() {
+  return ONBOARDING_SLIDES.length + (onboardingHasAuthSlide() ? 1 : 0);
+}
 function renderOnboardingHTML() {
-  const i = Math.max(0, Math.min(view.slide || 0, ONBOARDING_SLIDES.length - 1));
+  const total = onboardingSlideCount();
+  const i = Math.max(0, Math.min(view.slide || 0, total - 1));
+  const dots = Array.from({ length: total }, (_, idx) => `<span class="onboarding-dot ${idx === i ? 'active' : ''}"></span>`).join('');
+  if (onboardingHasAuthSlide() && i === ONBOARDING_SLIDES.length) {
+    return `<div class="onboarding-screen">
+      <div class="onboarding-skip-row">
+        <button class="link-btn" data-action="onboarding-skip">Skip</button>
+      </div>
+      <div class="onboarding-slide">
+        <div class="onboarding-emoji">🔐</div>
+        <h2>Save your progress</h2>
+        <p>Sign in with Google to back up your data to the cloud and add friends — or skip and do this anytime from Insights.</p>
+      </div>
+      <div class="onboarding-dots">${dots}</div>
+      <div style="width:100%;max-width:280px;margin:0 auto;">${googleSignInButtonHTML('do-google-signin-onboarding')}</div>
+      <button class="link-btn" style="margin-top:14px;align-self:center;" data-action="onboarding-skip">Not now</button>
+    </div>`;
+  }
   const slide = ONBOARDING_SLIDES[i];
-  const isLast = i === ONBOARDING_SLIDES.length - 1;
-  const dots = ONBOARDING_SLIDES.map((_, idx) => `<span class="onboarding-dot ${idx === i ? 'active' : ''}"></span>`).join('');
+  const isLast = i === total - 1;
   return `<div class="onboarding-screen">
     <div class="onboarding-skip-row">
       <button class="link-btn" data-action="onboarding-skip">Skip</button>
@@ -28,7 +50,7 @@ function renderOnboardingHTML() {
 const onboardingHandlers = {
   'onboarding-next': (el) => {
     const i = parseInt(el.dataset.slide, 10);
-    if (i >= ONBOARDING_SLIDES.length - 1) { handlers['onboarding-skip'](); return; }
+    if (i >= onboardingSlideCount() - 1) { handlers['onboarding-skip'](); return; }
     view = { name: 'onboarding', slide: i + 1 };
     render();
   },
@@ -38,6 +60,11 @@ const onboardingHandlers = {
     navStack = [];
     view = { name: 'home' };
     render();
+  },
+  'do-google-signin-onboarding': () => {
+    state.meta.onboardingSeen = true;
+    saveState();
+    signInWithGoogle().catch((e) => showToast(e.message));
   },
   'replay-onboarding': () => {
     navStack = [];
