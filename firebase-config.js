@@ -4,11 +4,11 @@
    below with the config from:
    Firebase console → Project settings → Your apps → Web app → firebaseConfig */
 const FIREBASE_CONFIG = {
-  apiKey: 'REPLACE_ME',
-  authDomain: 'REPLACE_ME.firebaseapp.com',
-  projectId: 'REPLACE_ME',
-  storageBucket: 'REPLACE_ME.appspot.com',
-  messagingSenderId: 'REPLACE_ME',
-  appId: 'REPLACE_ME'
+  apiKey: 'AIzaSyCqWle04vRfA8b9iUwtwoF9By5N8o97udc',
+  authDomain: 'sprout-bd7f0.firebaseapp.com',
+  projectId: 'sprout-bd7f0',
+  storageBucket: 'sprout-bd7f0.firebasestorage.app',
+  messagingSenderId: '22818690532',
+  appId: '1:22818690532:web:eb7c5fbbef0576f40de3f1'
 };
 const FIREBASE_CONFIGURED = FIREBASE_CONFIG.apiKey !== 'REPLACE_ME';
